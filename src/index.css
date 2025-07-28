@@ -1,0 +1,247 @@
+body {
+  margin: 0;
+  background-color: #121212;
+  color: white;
+  font-family: sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body.light-mode {
+  background-color: #f5f5f5;
+  color: black;
+}
+
+/* Dark mode styling for react-calendar */
+.react-calendar {
+  background-color: #1e1e1e;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.light-mode .react-calendar {
+  background-color: #ffffff;
+  color: black;
+  border: 1px solid #ddd;
+}
+
+.react-calendar__tile {
+  background-color: #2e2e2e;
+  color: black !important;
+  border-radius: 8px;
+  margin: 2px;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.light-mode .react-calendar__tile {
+  background-color: #f9f9f9;
+  color: black !important;
+}
+
+.react-calendar__tile:hover {
+  background-color: #3a3a3a;
+}
+
+.light-mode .react-calendar__tile:hover {
+  background-color: #e0e0e0;
+}
+
+.react-calendar__tile--active {
+  background-color: #0078D4;
+  color: black !important;
+}
+
+.react-calendar__tile--now {
+  background-color: #4a4a4a;
+  color: black !important;
+}
+
+.light-mode .react-calendar__tile--now {
+  background-color: #e8f4fd;
+  color: black !important;
+}
+
+/* Event indicators */
+.react-calendar__tile--has-events {
+  position: relative;
+}
+
+.react-calendar__tile--has-events::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  background-color: #ff6b6b;
+  border-radius: 50%;
+}
+
+/* Special date indicators */
+.react-calendar__tile--special {
+  position: relative;
+}
+
+.react-calendar__tile--special::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  background-color: #4ecdc4;
+  border-radius: 50%;
+}
+
+/* Override any red colors for weekends or other states */
+.react-calendar__tile--weekend {
+  color: black !important;
+}
+
+.light-mode .react-calendar__tile--weekend {
+  color: black !important;
+}
+
+.react-calendar__tile--neighboringMonth {
+  color: #666 !important;
+}
+
+.react-calendar__tile--disabled {
+  color: #444 !important;
+  background-color: #2a2a2a;
+  cursor: not-allowed;
+}
+
+.light-mode .react-calendar__tile--disabled {
+  color: #999 !important;
+  background-color: #f0f0f0;
+}
+
+.react-calendar__navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.react-calendar__navigation button {
+  color: black !important;
+  background-color: #3a3a3a;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
+}
+
+.light-mode .react-calendar__navigation button {
+  color: black !important;
+  background-color: #e0e0e0;
+}
+
+.react-calendar__navigation button:hover {
+  background-color: #4a4a4a;
+}
+
+.light-mode .react-calendar__navigation button:hover {
+  background-color: #d0d0d0;
+}
+
+.react-calendar__navigation button:disabled {
+  background-color: #2a2a2a;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.light-mode .react-calendar__navigation button:disabled {
+  background-color: #f0f0f0;
+  color: #999;
+}
+
+.react-calendar__navigation__label {
+  color: black !important;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.light-mode .react-calendar__navigation__label {
+  color: black !important;
+}
+
+.react-calendar__month-view__weekdays {
+  color: black;
+  font-weight: bold;
+}
+
+.light-mode .react-calendar__month-view__weekdays {
+  color: black;
+}
+
+.react-calendar__month-view__weekdays__weekday {
+  padding: 8px;
+  text-align: center;
+}
+
+/* Additional overrides to ensure no red colors */
+.react-calendar__tile abbr {
+  color: inherit !important;
+}
+
+.react-calendar__tile * {
+  color: inherit !important;
+}
+
+/* Theme transition classes */
+.theme-transition {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom scrollbar for better UX */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2e2e2e;
+}
+
+.light-mode ::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+}
+
+.light-mode ::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+.light-mode ::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
+/* Additional rules to ensure month/year text is black */
+.react-calendar__navigation__label abbr,
+.react-calendar__navigation__label span,
+.react-calendar__navigation__label * {
+  color: black !important;
+}
+
+.light-mode .react-calendar__navigation__label abbr,
+.light-mode .react-calendar__navigation__label span,
+.light-mode .react-calendar__navigation__label * {
+  color: black !important;
+}
