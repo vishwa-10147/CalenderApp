@@ -298,10 +298,7 @@ describe('App', () => {
 
     const titleInput = screen.getByPlaceholderText(/create a task/i)
     const categorySelect = screen.getByRole('combobox', { name: /task category/i })
-    const prioritySelects = screen.getAllByRole('combobox')
-    const prioritySelect = prioritySelects.find(select => 
-      Array.from(select.options).some(opt => opt.value === 'high')
-    ) || prioritySelects[1] // Fallback to second combobox (priority is usually second)
+    const prioritySelect = screen.getByRole('combobox', { name: /task priority/i })
     const addButton = screen.getByRole('button', { name: /add/i })
 
     // Create low priority task
