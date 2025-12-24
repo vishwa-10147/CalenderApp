@@ -226,5 +226,407 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByText('Loaded Task')).toBeInTheDocument()
   })
+
+  it('searches tasks by title', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    // Create multiple tasks
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Important Task')
+      await user.click(addButton)
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Another Task')
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Important Task')).toBeInTheDocument()
+      expect(screen.getByText('Another Task')).toBeInTheDocument()
+    })
+
+    // Search for a task
+    const searchInput = screen.getByPlaceholderText(/search tasks/i)
+    await act(async () => {
+      await user.type(searchInput, 'Important')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Important Task')).toBeInTheDocument()
+      expect(screen.queryByText('Another Task')).not.toBeInTheDocument()
+    })
+  })
+
+  it('clears search query', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Searchable Task')
+      await user.click(addButton)
+    })
+
+    const searchInput = screen.getByPlaceholderText(/search tasks/i)
+    await act(async () => {
+      await user.type(searchInput, 'Searchable')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Searchable Task')).toBeInTheDocument()
+    })
+
+    // Clear search
+    const clearButton = screen.getByRole('button', { name: /clear search/i })
+    await act(async () => {
+      await user.click(clearButton)
+    })
+
+    await waitFor(() => {
+      expect(searchInput).toHaveValue('')
+    })
+  })
+
+  it('sorts tasks by priority', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const categorySelect = screen.getByRole('combobox', { name: /task category/i })
+    const prioritySelect = screen.getByRole('combobox', { name: /priority/i })
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    // Create low priority task
+    await act(async () => {
+      await user.type(titleInput, 'Low Priority Task')
+      await user.selectOptions(prioritySelect, 'low')
+      await user.click(addButton)
+    })
+
+    // Create high priority task
+    await act(async () => {
+      await user.clear(titleInput)
+      await user.type(titleInput, 'High Priority Task')
+      await user.selectOptions(prioritySelect, 'high')
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('High Priority Task')).toBeInTheDocument()
+      expect(screen.getByText('Low Priority Task')).toBeInTheDocument()
+    })
+
+    // Sort by priority
+    const sortSelect = screen.getByRole('combobox', { name: /sort tasks/i })
+    await act(async () => {
+      await user.selectOptions(sortSelect, 'priority')
+    })
+
+    // High priority should appear first
+    const tasks = screen.getAllByText(/priority task/i)
+    expect(tasks[0]).toHaveTextContent('High Priority Task')
+  })
+
+  it('sorts tasks by title', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Zebra Task')
+      await user.click(addButton)
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Apple Task')
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Apple Task')).toBeInTheDocument()
+      expect(screen.getByText('Zebra Task')).toBeInTheDocument()
+    })
+
+    // Sort by title
+    const sortSelect = screen.getByRole('combobox', { name: /sort tasks/i })
+    await act(async () => {
+      await user.selectOptions(sortSelect, 'title')
+    })
+
+    // Apple should appear before Zebra
+    const tasks = screen.getAllByText(/task/i)
+    expect(tasks[0]).toHaveTextContent('Apple Task')
+  })
+
+  it('bulk deletes completed tasks', async () => {
+    const user = userEvent.setup()
+    window.confirm = vi.fn(() => true)
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    // Create and complete tasks
+    await act(async () => {
+      await user.type(titleInput, 'Task 1')
+      await user.click(addButton)
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Task 2')
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Task 1')).toBeInTheDocument()
+      expect(screen.getByText('Task 2')).toBeInTheDocument()
+    })
+
+    // Complete both tasks
+    const checkbox1 = screen.getByRole('button', { name: /mark task 1 as complete/i })
+    const checkbox2 = screen.getByRole('button', { name: /mark task 2 as complete/i })
+    
+    await act(async () => {
+      await user.click(checkbox1)
+      await user.click(checkbox2)
+    })
+
+    // Bulk delete
+    const clearButton = screen.getByRole('button', { name: /clear completed/i })
+    await act(async () => {
+      await user.click(clearButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Task 1')).not.toBeInTheDocument()
+      expect(screen.queryByText('Task 2')).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows empty state when no tasks match search', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Existing Task')
+      await user.click(addButton)
+    })
+
+    const searchInput = screen.getByPlaceholderText(/search tasks/i)
+    await act(async () => {
+      await user.type(searchInput, 'NonExistent')
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/no tasks found matching/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows empty state when no tasks exist', () => {
+    render(<App />)
+    expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument()
+  })
+
+  it('shows task count in subtitle', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Task 1')
+      await user.click(addButton)
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Task 2')
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 tasks/i)).toBeInTheDocument()
+    })
+  })
+
+  it('shows completed task count', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Task 1')
+      await user.click(addButton)
+    })
+
+    const checkbox = screen.getByRole('button', { name: /mark task 1 as complete/i })
+    await act(async () => {
+      await user.click(checkbox)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 completed/i)).toBeInTheDocument()
+    })
+  })
+
+  it('exports tasks to JSON', async () => {
+    const user = userEvent.setup()
+    // Mock URL.createObjectURL and document.createElement
+    global.URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+    global.URL.revokeObjectURL = vi.fn()
+    
+    const mockLink = {
+      href: '',
+      download: '',
+      click: vi.fn(),
+    }
+    const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockLink)
+    const appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockLink)
+    const removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockLink)
+
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    await act(async () => {
+      await user.type(titleInput, 'Export Task')
+      await user.click(addButton)
+    })
+
+    const exportButton = screen.getByRole('button', { name: /export tasks/i })
+    await act(async () => {
+      await user.click(exportButton)
+    })
+
+    expect(createElementSpy).toHaveBeenCalledWith('a')
+    expect(mockLink.click).toHaveBeenCalled()
+    expect(mockLink.download).toMatch(/focusflow-tasks-.*\.json/)
+
+    createElementSpy.mockRestore()
+    appendChildSpy.mockRestore()
+    removeChildSpy.mockRestore()
+  })
+
+  it('imports tasks from JSON', async () => {
+    const user = userEvent.setup()
+    window.confirm = vi.fn(() => true)
+
+    const mockFile = new File(
+      [JSON.stringify([{ id: '1', title: 'Imported Task', category: 'work', completed: false, priority: 'medium' }])],
+      'tasks.json',
+      { type: 'application/json' }
+    )
+
+    const mockFileReader = {
+      readAsText: vi.fn(function() {
+        this.onload({ target: { result: JSON.stringify([{ id: '1', title: 'Imported Task', category: 'work', completed: false, priority: 'medium' }]) } })
+      }),
+      result: '',
+    }
+
+    global.FileReader = vi.fn(() => mockFileReader)
+
+    const mockInput = {
+      type: '',
+      accept: '',
+      files: [mockFile],
+      click: vi.fn(),
+      onchange: null,
+    }
+
+    vi.spyOn(document, 'createElement').mockReturnValue(mockInput)
+
+    render(<App />)
+
+    const importButton = screen.getByRole('button', { name: /import tasks/i })
+    await act(async () => {
+      await user.click(importButton)
+    })
+
+    // Trigger file selection
+    if (mockInput.onchange) {
+      mockInput.onchange({ target: mockInput })
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText('Imported Task')).toBeInTheDocument()
+    })
+  })
+
+  it('displays due date indicators for overdue tasks', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    // Create task with past end date
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    await act(async () => {
+      await user.type(titleInput, 'Overdue Task')
+      const endDateInput = screen.getByLabelText(/end date/i)
+      await user.type(endDateInput, yesterdayStr)
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      const taskTitle = screen.getByText('Overdue Task')
+      expect(taskTitle.textContent).toContain('⚠️')
+    })
+  })
+
+  it('displays due date indicators for tasks due soon', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const titleInput = screen.getByPlaceholderText(/create a task/i)
+    const addButton = screen.getByRole('button', { name: /add/i })
+
+    // Create task with tomorrow as end date
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+    await act(async () => {
+      await user.type(titleInput, 'Due Soon Task')
+      const endDateInput = screen.getByLabelText(/end date/i)
+      await user.type(endDateInput, tomorrowStr)
+      await user.click(addButton)
+    })
+
+    await waitFor(() => {
+      const taskTitle = screen.getByText('Due Soon Task')
+      expect(taskTitle.textContent).toContain('🔔')
+    })
+  })
+
+  it('uses keyboard shortcut to focus search', async () => {
+    render(<App />)
+
+    const searchInput = screen.getByPlaceholderText(/search tasks/i)
+    
+    // Simulate Ctrl+K
+    const event = new KeyboardEvent('keydown', {
+      key: 'k',
+      ctrlKey: true,
+      bubbles: true,
+    })
+    
+    document.dispatchEvent(event)
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(searchInput)
+    })
+  })
 })
 
