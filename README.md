@@ -6,15 +6,19 @@ A modern, responsive calendar and task management application built with React a
 
 ## Features
 
-- ✅ **Task Management**: Create, organize, and complete tasks with categories (Work, Personal, Wishlist)
+- ✅ **Task Management**: Create, edit, delete, and organize tasks with categories (Work, Personal, Wishlist)
 - 📅 **Calendar View**: Visualize tasks on a monthly calendar with drag-and-drop functionality
 - 📊 **Productivity Dashboard**: Track completion rates, daily stats, and category breakdowns
 - 🎯 **Priority Levels**: Assign high, medium, or low priority to tasks
 - ⏰ **Reminders**: Set date and time reminders for important tasks
 - 📝 **Task Details**: Add notes, start/end dates, and end times to tasks
 - 💾 **Local Storage**: All data is saved locally in your browser
+- ☁️ **Cloud Sync**: Optional Supabase integration for cross-device synchronization
+- 🌙 **Dark Mode**: Toggle between light and dark themes
+- ♿ **Accessible**: Built with ARIA labels, keyboard navigation, and screen reader support
 - 📱 **Responsive Design**: Works seamlessly on desktop and mobile devices
 - 🔄 **PWA Ready**: Service worker and manifest included for Progressive Web App capabilities
+- 🧪 **Tested**: Comprehensive unit tests for reliability
 
 ## Tech Stack
 
@@ -31,6 +35,7 @@ A modern, responsive calendar and task management application built with React a
 
 - Node.js 20 or higher
 - npm or yarn
+- (Optional) Supabase account for cloud sync
 
 ### Installation
 
@@ -45,12 +50,38 @@ cd CalenderApp
 npm install
 ```
 
-3. Start the development server:
+3. (Optional) Set up Supabase for cloud sync:
+   - Create a project at [Supabase](https://app.supabase.com)
+   - Create a `tasks` table with the following schema:
+     ```sql
+     CREATE TABLE tasks (
+       id TEXT PRIMARY KEY,
+       user_id UUID REFERENCES auth.users(id),
+       title TEXT NOT NULL,
+       category TEXT,
+       start_date TEXT,
+       end_date TEXT,
+       end_time TEXT,
+       notes TEXT,
+       priority TEXT,
+       reminder TEXT,
+       completed BOOLEAN DEFAULT false,
+       updated_at TIMESTAMP DEFAULT NOW()
+     );
+     ```
+   - Create a `.env` file in the root directory:
+     ```
+     VITE_SUPABASE_URL=your_supabase_project_url
+     VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+     ```
+   - Note: The app works perfectly fine without Supabase in local-only mode
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+5. Open your browser and navigate to `http://localhost:5173`
 
 ### Building for Production
 
@@ -128,16 +159,33 @@ The deployment workflow:
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
+- `npm test` - Run unit tests
+- `npm run test:ui` - Run tests with UI
+- `npm run test:coverage` - Run tests with coverage report
+
+## Testing
+
+The project includes comprehensive unit tests using Vitest and React Testing Library:
+
+```bash
+# Run tests
+npm test
+
+# Run tests with UI
+npm run test:ui
+
+# Run tests with coverage
+npm run test:coverage
+```
 
 ## Future Enhancements
 
-- [ ] Cloud sync with Supabase
-- [ ] Task editing and deletion
 - [ ] Recurring tasks
 - [ ] Task search and filtering
 - [ ] Export/import functionality
-- [ ] Dark mode toggle
 - [ ] Multi-user support
+- [ ] Task templates
+- [ ] Notifications for reminders
 
 ## Contributing
 
