@@ -568,12 +568,14 @@ function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTa
         </div>
         <div className="task-form-row">
           <div className="field">
-            <label>Priority</label>
+            <label htmlFor="priority-select">Priority</label>
             <select
+              id="priority-select"
               name="priority"
               className="select"
               value={form.priority}
               onChange={handleChange}
+              aria-label="Task priority"
             >
               <option value="low">Low</option>
               <option value="medium">Medium</option>

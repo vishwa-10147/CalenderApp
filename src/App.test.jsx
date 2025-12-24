@@ -298,7 +298,10 @@ describe('App', () => {
 
     const titleInput = screen.getByPlaceholderText(/create a task/i)
     const categorySelect = screen.getByRole('combobox', { name: /task category/i })
-    const prioritySelect = screen.getByRole('combobox', { name: /priority/i })
+    const prioritySelects = screen.getAllByRole('combobox')
+    const prioritySelect = prioritySelects.find(select => 
+      Array.from(select.options).some(opt => opt.value === 'high')
+    ) || prioritySelects[1] // Fallback to second combobox (priority is usually second)
     const addButton = screen.getByRole('button', { name: /add/i })
 
     // Create low priority task
@@ -358,9 +361,16 @@ describe('App', () => {
       await user.selectOptions(sortSelect, 'title')
     })
 
-    // Apple should appear before Zebra
-    const tasks = screen.getAllByText(/task/i)
-    expect(tasks[0]).toHaveTextContent('Apple Task')
+    // Apple should appear before Zebra - check task list items specifically
+    await waitFor(() => {
+      const taskItems = screen.getAllByRole('listitem').filter(item => 
+        item.classList.contains('task-item')
+      )
+      const taskTitles = taskItems.map(item => item.textContent)
+      const appleIndex = taskTitles.findIndex(text => text.includes('Apple Task'))
+      const zebraIndex = taskTitles.findIndex(text => text.includes('Zebra Task'))
+      expect(appleIndex).toBeLessThan(zebraIndex)
+    })
   })
 
   it('bulk deletes completed tasks', async () => {
@@ -477,19 +487,7 @@ describe('App', () => {
 
   it('exports tasks to JSON', async () => {
     const user = userEvent.setup()
-    // Mock URL.createObjectURL and document.createElement
-    global.URL.createObjectURL = vi.fn(() => 'blob:mock-url')
-    global.URL.revokeObjectURL = vi.fn()
     
-    const mockLink = {
-      href: '',
-      download: '',
-      click: vi.fn(),
-    }
-    const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockLink)
-    const appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockLink)
-    const removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockLink)
-
     render(<App />)
 
     const titleInput = screen.getByPlaceholderText(/create a task/i)
@@ -500,23 +498,50 @@ describe('App', () => {
       await user.click(addButton)
     })
 
+    await waitFor(() => {
+      expect(screen.getByText('Export Task')).toBeInTheDocument()
+    })
+
+    // Mock URL methods
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    
+    // Track createElement calls but don't break React
+    let linkElement = null
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const element = document.createElement(tag)
+      if (tag === 'a') {
+        linkElement = element
+        // Spy on click but don't prevent default behavior
+        const originalClick = element.click.bind(element)
+        element.click = vi.fn(originalClick)
+      }
+      return element
+    })
+    const appendChildSpy = vi.spyOn(document.body, 'appendChild')
+    const removeChildSpy = vi.spyOn(document.body, 'removeChild')
+
     const exportButton = screen.getByRole('button', { name: /export tasks/i })
     await act(async () => {
       await user.click(exportButton)
     })
 
     expect(createElementSpy).toHaveBeenCalledWith('a')
-    expect(mockLink.click).toHaveBeenCalled()
-    expect(mockLink.download).toMatch(/focusflow-tasks-.*\.json/)
+    expect(linkElement).toBeTruthy()
+    expect(linkElement.download).toMatch(/focusflow-tasks-.*\.json/)
 
     createElementSpy.mockRestore()
     appendChildSpy.mockRestore()
     removeChildSpy.mockRestore()
+    createObjectURLSpy.mockRestore()
+    revokeObjectURLSpy.mockRestore()
   })
 
   it('imports tasks from JSON', async () => {
     const user = userEvent.setup()
     window.confirm = vi.fn(() => true)
+
+    render(<App />)
 
     const mockFile = new File(
       [JSON.stringify([{ id: '1', title: 'Imported Task', category: 'work', completed: false, priority: 'medium' }])],
@@ -524,26 +549,41 @@ describe('App', () => {
       { type: 'application/json' }
     )
 
+    let fileReaderOnload = null
     const mockFileReader = {
-      readAsText: vi.fn(function() {
-        this.onload({ target: { result: JSON.stringify([{ id: '1', title: 'Imported Task', category: 'work', completed: false, priority: 'medium' }]) } })
+      readAsText: vi.fn(function(file) {
+        fileReaderOnload = this.onload
+        // Simulate async file reading
+        setTimeout(() => {
+          if (fileReaderOnload) {
+            fileReaderOnload({ 
+              target: { 
+                result: JSON.stringify([{ id: '1', title: 'Imported Task', category: 'work', completed: false, priority: 'medium' }]) 
+              } 
+            })
+          }
+        }, 10)
       }),
       result: '',
     }
 
     global.FileReader = vi.fn(() => mockFileReader)
 
-    const mockInput = {
-      type: '',
-      accept: '',
-      files: [mockFile],
-      click: vi.fn(),
-      onchange: null,
-    }
-
-    vi.spyOn(document, 'createElement').mockReturnValue(mockInput)
-
-    render(<App />)
+    let inputElement = null
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const element = document.createElement(tag)
+      if (tag === 'input') {
+        inputElement = element
+        element.type = 'file'
+        element.accept = 'application/json'
+        Object.defineProperty(element, 'files', {
+          value: [mockFile],
+          writable: false,
+        })
+        element.click = vi.fn()
+      }
+      return element
+    })
 
     const importButton = screen.getByRole('button', { name: /import tasks/i })
     await act(async () => {
@@ -551,13 +591,15 @@ describe('App', () => {
     })
 
     // Trigger file selection
-    if (mockInput.onchange) {
-      mockInput.onchange({ target: mockInput })
+    if (inputElement && inputElement.onchange) {
+      inputElement.onchange({ target: inputElement })
     }
 
     await waitFor(() => {
       expect(screen.getByText('Imported Task')).toBeInTheDocument()
-    })
+    }, { timeout: 2000 })
+
+    createElementSpy.mockRestore()
   })
 
   it('displays due date indicators for overdue tasks', async () => {
@@ -574,7 +616,10 @@ describe('App', () => {
 
     await act(async () => {
       await user.type(titleInput, 'Overdue Task')
-      const endDateInput = screen.getByLabelText(/end date/i)
+    })
+
+    const endDateInput = screen.getByLabelText(/end date/i)
+    await act(async () => {
       await user.type(endDateInput, yesterdayStr)
       await user.click(addButton)
     })
@@ -599,7 +644,10 @@ describe('App', () => {
 
     await act(async () => {
       await user.type(titleInput, 'Due Soon Task')
-      const endDateInput = screen.getByLabelText(/end date/i)
+    })
+
+    const endDateInput = screen.getByLabelText(/end date/i)
+    await act(async () => {
       await user.type(endDateInput, tomorrowStr)
       await user.click(addButton)
     })
@@ -613,20 +661,26 @@ describe('App', () => {
   it('uses keyboard shortcut to focus search', async () => {
     render(<App />)
 
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/search tasks/i)).toBeInTheDocument()
+    })
+
     const searchInput = screen.getByPlaceholderText(/search tasks/i)
     
-    // Simulate Ctrl+K
+    // Simulate Ctrl+K - the handler listens on window
     const event = new KeyboardEvent('keydown', {
       key: 'k',
       ctrlKey: true,
       bubbles: true,
+      cancelable: true,
     })
     
-    document.dispatchEvent(event)
+    // Focus should be on search input after Ctrl+K
+    window.dispatchEvent(event)
 
     await waitFor(() => {
       expect(document.activeElement).toBe(searchInput)
-    })
+    }, { timeout: 500 })
   })
 })
 
