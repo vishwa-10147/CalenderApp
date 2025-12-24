@@ -1,12 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Calendar from 'react-calendar'
+import { createClient } from '@supabase/supabase-js'
 import 'react-calendar/dist/Calendar.css'
 
 const CATEGORIES = ['all', 'work', 'personal', 'wishlist']
 const STORAGE_KEY = 'focusflow_tasks_v1'
+const THEME_KEY = 'focusflow_theme'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+
+// Initialize Supabase client (only if keys are provided)
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null
 
 function App() {
   const [activeTab, setActiveTab] = useState('tasks') // 'tasks' | 'calendar' | 'profile'
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = window.localStorage.getItem(THEME_KEY)
+    return saved ? saved === 'dark' : false
+  })
+  const [syncStatus, setSyncStatus] = useState('local') // 'local' | 'syncing' | 'synced' | 'error'
   const [tasks, setTasks] = useState(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -20,12 +35,85 @@ function App() {
     }
   })
 
+  // Apply dark mode class
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    document.documentElement.classList.toggle('dark-mode', darkMode)
+    try {
+      window.localStorage.setItem(THEME_KEY, darkMode ? 'dark' : 'light')
+    } catch {
+      // ignore write errors
+    }
+  }, [darkMode])
+
+  // Save to localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
     } catch {
       // ignore write errors
+    }
+  }, [tasks])
+
+  // Sync with Supabase if configured
+  useEffect(() => {
+    if (!supabase) return
+    
+    const syncToSupabase = async () => {
+      try {
+        setSyncStatus('syncing')
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setSyncStatus('local')
+          return
+        }
+
+        const { error } = await supabase
+          .from('tasks')
+          .upsert(
+            tasks.map(task => ({
+              id: task.id,
+              user_id: user.id,
+              ...task,
+              updated_at: new Date().toISOString(),
+            })),
+            { onConflict: 'id' }
+          )
+
+        if (error) throw error
+        setSyncStatus('synced')
+      } catch (error) {
+        console.error('Sync error:', error)
+        setSyncStatus('error')
+      }
+    }
+
+    const loadFromSupabase = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false })
+
+        if (error) throw error
+        if (data && data.length > 0) {
+          setTasks(data.map(({ user_id, updated_at, ...task }) => task))
+        }
+      } catch (error) {
+        console.error('Load error:', error)
+      }
+    }
+
+    // Load on mount, sync on changes
+    loadFromSupabase()
+    if (tasks.length > 0) {
+      const timeoutId = setTimeout(syncToSupabase, 1000) // Debounce
+      return () => clearTimeout(timeoutId)
     }
   }, [tasks])
 
@@ -47,6 +135,23 @@ function App() {
     ])
   }
 
+  const handleUpdateTask = (id, updates) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    )
+  }
+
+  const handleDeleteTask = (id) => {
+    if (window.confirm('Are you sure you want to delete this task?')) {
+      setTasks((prev) => prev.filter((t) => t.id !== id))
+      
+      // Also delete from Supabase if configured
+      if (supabase) {
+        supabase.from('tasks').delete().eq('id', id).catch(console.error)
+      }
+    }
+  }
+
   const handleToggleTask = (id) => {
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
@@ -62,7 +167,7 @@ function App() {
   const today = useMemo(() => new Date(), [])
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${darkMode ? 'dark-mode' : ''}`}>
       <header className="app-header">
         <div>
           <div className="app-title">
@@ -71,26 +176,49 @@ function App() {
           </div>
           <p className="app-subtitle">Plan tasks, see them on a calendar, and track progress.</p>
         </div>
-        <div className="pill">
-          <span className="pill-dot" />
-          <span>Synced</span>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setDarkMode(!darkMode)}
+            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={darkMode ? 'Light mode' : 'Dark mode'}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+          <div className="pill">
+            <span className={`pill-dot ${syncStatus === 'synced' ? 'pill-dot--synced' : syncStatus === 'syncing' ? 'pill-dot--syncing' : ''}`} />
+            <span>{syncStatus === 'synced' ? 'Synced' : syncStatus === 'syncing' ? 'Syncing...' : 'Local'}</span>
+          </div>
         </div>
       </header>
 
-      <nav className="tab-nav">
+      <nav className="tab-nav" role="tablist" aria-label="Main navigation">
         <button
+          role="tab"
+          aria-selected={activeTab === 'tasks'}
+          aria-controls="tasks-panel"
+          id="tasks-tab"
           className={`tab-btn ${activeTab === 'tasks' ? 'tab-btn--active' : ''}`}
           onClick={() => setActiveTab('tasks')}
         >
           Tasks
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === 'calendar'}
+          aria-controls="calendar-panel"
+          id="calendar-tab"
           className={`tab-btn ${activeTab === 'calendar' ? 'tab-btn--active' : ''}`}
           onClick={() => setActiveTab('calendar')}
         >
           Calendar
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === 'profile'}
+          aria-controls="profile-panel"
+          id="profile-tab"
           className={`tab-btn ${activeTab === 'profile' ? 'tab-btn--active' : ''}`}
           onClick={() => setActiveTab('profile')}
         >
@@ -100,12 +228,20 @@ function App() {
 
       <main className="app-main">
         {activeTab === 'tasks' && (
-          <TasksView tasks={tasks} onCreateTask={handleCreateTask} onToggleTask={handleToggleTask} />
+          <TasksView
+            tasks={tasks}
+            onCreateTask={handleCreateTask}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onToggleTask={handleToggleTask}
+          />
         )}
         {activeTab === 'calendar' && (
           <CalendarView
             tasks={tasks}
             today={today}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
             onToggleTask={handleToggleTask}
             onMoveTaskToDate={handleMoveTaskToDate}
           />
@@ -129,8 +265,9 @@ function App() {
   )
 }
 
-function TasksView({ tasks, onCreateTask, onToggleTask }) {
+function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTask }) {
   const [filter, setFilter] = useState('all')
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({
     title: '',
     category: 'work',
@@ -155,28 +292,74 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
     e.preventDefault()
     if (!form.title.trim()) return
 
-    onCreateTask(form)
-    setForm((prev) => ({
-      ...prev,
+    if (editingId) {
+      onUpdateTask(editingId, form)
+      setEditingId(null)
+    } else {
+      onCreateTask(form)
+    }
+    
+    setForm({
       title: '',
+      category: 'work',
       startDate: '',
       endDate: '',
       endTime: '',
       notes: '',
+      priority: 'medium',
       reminder: '',
-    }))
+    })
+  }
+
+  const handleEdit = (task) => {
+    setEditingId(task.id)
+    setForm({
+      title: task.title,
+      category: task.category,
+      startDate: task.startDate || '',
+      endDate: task.endDate || '',
+      endTime: task.endTime || '',
+      notes: task.notes || '',
+      priority: task.priority || 'medium',
+      reminder: task.reminder || '',
+    })
+    // Scroll to form (only in browser, not in test environment)
+    try {
+      const form = document.querySelector('.task-form')
+      if (form && typeof form.scrollIntoView === 'function') {
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    } catch {
+      // Ignore scroll errors in test environment
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+    setForm({
+      title: '',
+      category: 'work',
+      startDate: '',
+      endDate: '',
+      endTime: '',
+      notes: '',
+      priority: 'medium',
+      reminder: '',
+    })
   }
 
   return (
-    <section className="panel">
+    <section className="panel" role="tabpanel" id="tasks-panel" aria-labelledby="tasks-tab">
       <div className="panel-header">
         <h2>Tasks</h2>
-        <div className="chip-row">
+        <div className="chip-row" role="group" aria-label="Filter tasks by category">
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
+              type="button"
               className={`chip ${filter === cat ? 'chip--active' : ''}`}
               onClick={() => setFilter(cat)}
+              aria-pressed={filter === cat}
             >
               {cat === 'all'
                 ? 'All'
@@ -190,7 +373,7 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
         </div>
       </div>
 
-      <form className="task-form" onSubmit={handleSubmit}>
+      <form className="task-form" onSubmit={handleSubmit} aria-label={editingId ? 'Edit task' : 'Create new task'}>
         <div className="task-form-row">
           <input
             name="title"
@@ -198,17 +381,23 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
             placeholder="Create a task..."
             value={form.title}
             onChange={handleChange}
+            aria-label="Task title"
           />
-          <select
-            name="category"
-            className="select"
-            value={form.category}
-            onChange={handleChange}
-          >
-            <option value="work">Work</option>
-            <option value="personal">Personal</option>
-            <option value="wishlist">Wishlist</option>
-          </select>
+          <div className="field" style={{ minWidth: '120px' }}>
+            <label htmlFor="category-select" className="sr-only">Category</label>
+            <select
+              id="category-select"
+              name="category"
+              className="select"
+              value={form.category}
+              onChange={handleChange}
+              aria-label="Task category"
+            >
+              <option value="work">Work</option>
+              <option value="personal">Personal</option>
+              <option value="wishlist">Wishlist</option>
+            </select>
+          </div>
         </div>
         <div className="task-form-row">
           <div className="field">
@@ -278,35 +467,41 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
             />
           </div>
           <button type="submit" className="btn-primary">
-            Add
+            {editingId ? 'Update' : 'Add'}
           </button>
+          {editingId && (
+            <button type="button" className="btn-secondary" onClick={handleCancelEdit}>
+              Cancel
+            </button>
+          )}
         </div>
       </form>
 
-      <ul className="task-list">
+      <ul className="task-list" role="list">
         {filteredTasks.length === 0 && (
-          <li className="task-empty">No tasks yet in this view.</li>
+          <li className="task-empty" role="listitem">No tasks yet in this view.</li>
         )}
         {filteredTasks.map((task) => (
-          <li key={task.id} className={`task-item ${task.completed ? 'task-item--done' : ''}`}>
+          <li key={task.id} className={`task-item ${task.completed ? 'task-item--done' : ''}`} role="listitem">
             <button
               type="button"
               className={`task-checkbox ${task.completed ? 'task-checkbox--checked' : ''}`}
               onClick={() => onToggleTask(task.id)}
+              aria-label={task.completed ? `Mark ${task.title} as incomplete` : `Mark ${task.title} as complete`}
             >
-              {task.completed && <span>✓</span>}
+              {task.completed && <span aria-hidden="true">✓</span>}
             </button>
             <div className="task-main">
               <div className="task-title-row">
                 <span className="task-title">{task.title}</span>
-                <span className={`pill pill--mini pill--priority pill--priority-${task.priority}`}>
+                <span className={`pill pill--mini pill--priority pill--priority-${task.priority}`} aria-label={`Priority: ${task.priority}`}>
                   {task.priority === 'high'
                     ? 'High'
                     : task.priority === 'low'
                       ? 'Low'
                       : 'Medium'}
                 </span>
-                <span className={`pill pill--mini pill--${task.category}`}>
+                <span className={`pill pill--mini pill--${task.category}`} aria-label={`Category: ${task.category}`}>
                   {task.category === 'work'
                     ? 'Work'
                     : task.category === 'personal'
@@ -325,6 +520,26 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
               </div>
               {task.notes && <p className="task-notes">{task.notes}</p>}
             </div>
+            <div className="task-actions">
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => handleEdit(task)}
+                aria-label={`Edit task: ${task.title}`}
+                title="Edit task"
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => onDeleteTask(task.id)}
+                aria-label={`Delete task: ${task.title}`}
+                title="Delete task"
+              >
+                🗑️
+              </button>
+            </div>
           </li>
         ))}
       </ul>
@@ -332,7 +547,7 @@ function TasksView({ tasks, onCreateTask, onToggleTask }) {
   )
 }
 
-function CalendarView({ tasks, today, onToggleTask, onMoveTaskToDate }) {
+function CalendarView({ tasks, today, onUpdateTask, onDeleteTask, onToggleTask, onMoveTaskToDate }) {
   const [selectedDate, setSelectedDate] = useState(startOfDay(today))
   const selectedISO = selectedDate.toISOString().slice(0, 10)
 
@@ -360,7 +575,7 @@ function CalendarView({ tasks, today, onToggleTask, onMoveTaskToDate }) {
   }
 
   return (
-    <section className="panel">
+    <section className="panel" role="tabpanel" id="calendar-panel" aria-labelledby="calendar-tab">
       <div className="panel-header">
         <h2>Calendar</h2>
         <p className="panel-subtitle">Full month view with tasks shown on each day.</p>
@@ -401,25 +616,27 @@ function CalendarView({ tasks, today, onToggleTask, onMoveTaskToDate }) {
             className={`task-item ${task.completed ? 'task-item--done' : ''}`}
             draggable
             onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+            role="listitem"
           >
             <button
               type="button"
               className={`task-checkbox ${task.completed ? 'task-checkbox--checked' : ''}`}
               onClick={() => onToggleTask(task.id)}
+              aria-label={task.completed ? `Mark ${task.title} as incomplete` : `Mark ${task.title} as complete`}
             >
-              {task.completed && <span>✓</span>}
+              {task.completed && <span aria-hidden="true">✓</span>}
             </button>
             <div className="task-main">
               <div className="task-title-row">
                 <span className="task-title">{task.title}</span>
-                <span className={`pill pill--mini pill--priority pill--priority-${task.priority}`}>
+                <span className={`pill pill--mini pill--priority pill--priority-${task.priority}`} aria-label={`Priority: ${task.priority}`}>
                   {task.priority === 'high'
                     ? 'High'
                     : task.priority === 'low'
                       ? 'Low'
                       : 'Medium'}
                 </span>
-                <span className={`pill pill--mini pill--${task.category}`}>
+                <span className={`pill pill--mini pill--${task.category}`} aria-label={`Category: ${task.category}`}>
                   {task.category === 'work'
                     ? 'Work'
                     : task.category === 'personal'
@@ -432,6 +649,17 @@ function CalendarView({ tasks, today, onToggleTask, onMoveTaskToDate }) {
                 {task.reminder && <span>Reminder: {formatReminder(task.reminder)}</span>}
               </div>
               {task.notes && <p className="task-notes">{task.notes}</p>}
+            </div>
+            <div className="task-actions">
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={() => onDeleteTask(task.id)}
+                aria-label={`Delete task: ${task.title}`}
+                title="Delete task"
+              >
+                🗑️
+              </button>
             </div>
           </li>
         ))}
@@ -464,13 +692,13 @@ function ProfileView({ tasks, today }) {
       : Math.round((dailyStats.today.completed / dailyStats.today.total) * 100)
 
   return (
-    <section className="panel">
+    <section className="panel" role="tabpanel" id="profile-panel" aria-labelledby="profile-tab">
       <div className="panel-header profile-header">
         <div>
           <h2>Profile</h2>
           <p className="panel-subtitle">Your productivity snapshot.</p>
         </div>
-        <div className="avatar">
+        <div className="avatar" aria-label="User avatar">
           <span>U</span>
         </div>
       </div>
