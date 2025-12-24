@@ -164,7 +164,71 @@ function App() {
     )
   }
 
+  const handleExportTasks = () => {
+    const dataStr = JSON.stringify(tasks, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `focusflow-tasks-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportTasks = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json'
+    input.onchange = (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        try {
+          const imported = JSON.parse(event.target.result)
+          if (Array.isArray(imported)) {
+            if (window.confirm(`Import ${imported.length} task${imported.length > 1 ? 's' : ''}? This will add them to your existing tasks.`)) {
+              setTasks((prev) => [...prev, ...imported])
+            }
+          } else {
+            alert('Invalid file format')
+          }
+        } catch (error) {
+          alert('Error reading file: ' + error.message)
+        }
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }
+
   const today = useMemo(() => new Date(), [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ctrl/Cmd + K to focus search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        const searchInput = document.querySelector('.search-input')
+        if (searchInput) {
+          searchInput.focus()
+        }
+      }
+      // Escape to clear search
+      if (e.key === 'Escape') {
+        const searchInput = document.querySelector('.search-input')
+        if (searchInput && document.activeElement === searchInput) {
+          searchInput.blur()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [])
 
   return (
     <div className={`app-shell ${darkMode ? 'dark-mode' : ''}`}>
@@ -176,7 +240,27 @@ function App() {
           </div>
           <p className="app-subtitle">Plan tasks, see them on a calendar, and track progress.</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="btn-icon btn-icon--header"
+              onClick={handleExportTasks}
+              aria-label="Export tasks"
+              title="Export tasks to JSON"
+            >
+              📥
+            </button>
+            <button
+              type="button"
+              className="btn-icon btn-icon--header"
+              onClick={handleImportTasks}
+              aria-label="Import tasks"
+              title="Import tasks from JSON"
+            >
+              📤
+            </button>
+          </div>
           <button
             type="button"
             className="theme-toggle"
@@ -267,6 +351,8 @@ function App() {
 
 function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTask }) {
   const [filter, setFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState('date') // 'date', 'priority', 'title'
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({
     title: '',
@@ -279,9 +365,36 @@ function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTa
     reminder: '',
   })
 
-  const filteredTasks = tasks.filter((task) =>
-    filter === 'all' ? true : task.category === filter,
-  )
+  const filteredTasks = tasks.filter((task) => {
+    const matchesCategory = filter === 'all' ? true : task.category === filter
+    const matchesSearch = searchQuery.trim() === '' || 
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (task.notes && task.notes.toLowerCase().includes(searchQuery.toLowerCase()))
+    return matchesCategory && matchesSearch
+  }).sort((a, b) => {
+    if (sortBy === 'priority') {
+      const priorityOrder = { high: 3, medium: 2, low: 1 }
+      return (priorityOrder[b.priority] || 2) - (priorityOrder[a.priority] || 2)
+    }
+    if (sortBy === 'title') {
+      return a.title.localeCompare(b.title)
+    }
+    // Sort by date (default)
+    const dateA = a.endDate || a.startDate || ''
+    const dateB = b.endDate || b.startDate || ''
+    if (!dateA && !dateB) return 0
+    if (!dateA) return 1
+    if (!dateB) return -1
+    return dateA.localeCompare(dateB)
+  })
+
+  const completedTasks = filteredTasks.filter(t => t.completed)
+  const handleBulkDelete = () => {
+    if (completedTasks.length === 0) return
+    if (window.confirm(`Delete ${completedTasks.length} completed task${completedTasks.length > 1 ? 's' : ''}?`)) {
+      completedTasks.forEach(task => onDeleteTask(task.id))
+    }
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -351,27 +464,81 @@ function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTa
   return (
     <section className="panel" role="tabpanel" id="tasks-panel" aria-labelledby="tasks-tab">
       <div className="panel-header">
-        <h2>Tasks</h2>
-        <div className="chip-row" role="group" aria-label="Filter tasks by category">
-          {CATEGORIES.map((cat) => (
+        <div>
+          <h2>Tasks</h2>
+          <p className="panel-subtitle">
+            {filteredTasks.length} {filteredTasks.length === 1 ? 'task' : 'tasks'}
+            {completedTasks.length > 0 && (
+              <span className="completed-count"> • {completedTasks.length} completed</span>
+            )}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            className="select select--sm"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            aria-label="Sort tasks"
+            style={{ minWidth: '100px', fontSize: '0.75rem', padding: '0.35rem 0.5rem' }}
+          >
+            <option value="date">Sort by Date</option>
+            <option value="priority">Sort by Priority</option>
+            <option value="title">Sort by Title</option>
+          </select>
+          {completedTasks.length > 0 && (
             <button
-              key={cat}
               type="button"
-              className={`chip ${filter === cat ? 'chip--active' : ''}`}
-              onClick={() => setFilter(cat)}
-              aria-pressed={filter === cat}
+              className="btn-secondary btn-secondary--sm"
+              onClick={handleBulkDelete}
+              title="Delete all completed tasks"
             >
-              {cat === 'all'
-                ? 'All'
-                : cat === 'work'
-                  ? 'Work'
-                  : cat === 'personal'
-                    ? 'Personal'
-                    : 'Wishlist'}
+              Clear Completed
             </button>
-          ))}
+          )}
+          <div className="chip-row" role="group" aria-label="Filter tasks by category">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                className={`chip ${filter === cat ? 'chip--active' : ''}`}
+                onClick={() => setFilter(cat)}
+                aria-pressed={filter === cat}
+              >
+                {cat === 'all'
+                  ? 'All'
+                  : cat === 'work'
+                    ? 'Work'
+                    : cat === 'personal'
+                      ? 'Personal'
+                      : 'Wishlist'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {tasks.length > 0 && (
+        <div className="search-container">
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search tasks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search tasks"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       <form className="task-form" onSubmit={handleSubmit} aria-label={editingId ? 'Edit task' : 'Create new task'}>
         <div className="task-form-row">
@@ -479,7 +646,31 @@ function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTa
 
       <ul className="task-list" role="list">
         {filteredTasks.length === 0 && (
-          <li className="task-empty" role="listitem">No tasks yet in this view.</li>
+          <li className="task-empty" role="listitem">
+            {searchQuery ? (
+              <>
+                <div className="empty-icon">🔍</div>
+                <div>No tasks found matching "{searchQuery}"</div>
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={() => setSearchQuery('')}
+                >
+                  Clear search
+                </button>
+              </>
+            ) : tasks.length === 0 ? (
+              <>
+                <div className="empty-icon">✨</div>
+                <div>No tasks yet. Create your first task to get started!</div>
+              </>
+            ) : (
+              <>
+                <div className="empty-icon">📋</div>
+                <div>No tasks in this category.</div>
+              </>
+            )}
+          </li>
         )}
         {filteredTasks.map((task) => (
           <li key={task.id} className={`task-item ${task.completed ? 'task-item--done' : ''}`} role="listitem">
@@ -493,7 +684,18 @@ function TasksView({ tasks, onCreateTask, onUpdateTask, onDeleteTask, onToggleTa
             </button>
             <div className="task-main">
               <div className="task-title-row">
-                <span className="task-title">{task.title}</span>
+                <span className="task-title">
+                  {task.title}
+                  {task.endDate && new Date(task.endDate) < new Date() && !task.completed && (
+                    <span className="task-overdue" title="Overdue"> ⚠️</span>
+                  )}
+                  {task.endDate && 
+                   new Date(task.endDate) >= new Date() && 
+                   new Date(task.endDate) <= new Date(Date.now() + 24 * 60 * 60 * 1000) && 
+                   !task.completed && (
+                    <span className="task-due-soon" title="Due soon"> 🔔</span>
+                  )}
+                </span>
                 <span className={`pill pill--mini pill--priority pill--priority-${task.priority}`} aria-label={`Priority: ${task.priority}`}>
                   {task.priority === 'high'
                     ? 'High'
